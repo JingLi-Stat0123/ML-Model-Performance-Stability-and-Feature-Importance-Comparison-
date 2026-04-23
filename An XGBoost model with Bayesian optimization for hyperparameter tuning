@@ -1,0 +1,66 @@
+import pandas as pd
+from sklearn.model_selection import train_test_split
+from datetime import datetime
+from xgboost import XGBClassifier
+from skopt import BayesSearchCV
+from skopt.space import Real, Categorical, Integer
+import shap
+import matplotlib
+matplotlib.use('TkAgg')
+import matplotlib.pyplot as plt
+
+input_path="A"  # Replace “A” with your file path
+data = pd.read_csv(inuput_path,index_col=0)
+print(f"The first five rows of data：{data.iloc[0:10,:]}")
+print(f"Number of missing values per column：{data.isna().sum()}")
+print(f"Percentage of missing values in each column：{data.isna().mean()}")
+
+data = data.dropna()
+X,y=data.iloc[:,1:],data.iloc[:,0]
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=0, stratify=y)
+print(f"The first 10 rows of data from the feature training set：{X_train.head(10)}")
+print(f"The first 10 rows of data from the feature training set：{y_train.head(10)}")
+
+# Create a XGBoost model
+t0 = datetime.now()
+model3 = XGBClassifier(objective="binary:logistic",eval_metric="mlogloss",random_state=0)
+search_spaces = {
+    "n_estimators":Integer(100,300),
+    "max_depth":Integer(3, 10),    
+    "subsample":Real(0.6,1),
+    "colsample_bytree":Real(0.5,1),
+    "learning_rate":Real(0.01,0.3),
+}
+opt = BayesSearchCV(
+    estimator=model3,
+    search_spaces=search_spaces,
+    scoring='roc_auc', 
+    n_iter=30,
+    cv=3,
+    n_jobs=-1,
+    verbose=1,
+    random_state=0,
+)
+opt.fit(X_train, y_train)
+best_model = opt.best_estimator_
+t_train_model3 = datetime.now()-t0
+print(f"Time required for Bayesian hyperparameter tuning and model training：{t_train_model3.total_seconds()}秒")
+print(f"Optimal combination of parameters：{opt.best_params_}")
+# Model Performance Evaluation
+print(f"The model's accuracy on the training set：{best_model.score(X_train, y_train)}")
+print(f"The model's accuracy on the test set：{best_model.score(X_test, y_test)}")
+print(f"Probability of prediction on the test set：{best_model.predict_proba(X_test)}")
+explainer = shap.TreeExplainer(best_model)
+shap_values = explainer(X_test)
+print(f"SHAP Value Analysis of the Model：{shap_values}")
+shap.plots.bar(shap_values)
+plt.show()
+# Import the data to be predicted
+new_data = pd.read_csv(r"B") # replace "B" with your file path
+model3_pred = best_model.predict(new_data)
+proba = best_model.predict_proba(new_data)
+new_data["predicted"] = model3_pred
+new_data["proba_0"] = proba[:,0]
+new_data["proba_1"] = proba[:,1]
+new_data.to_csv(r"C")   # replace "C" with your file path
+print(f"The forecast results have been saved")
