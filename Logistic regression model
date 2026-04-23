@@ -1,0 +1,73 @@
+import pandas as pd
+from sklearn.model_selection import train_test_split
+from sklearn.linear_model import LogisticRegression
+from datetime import datetime
+from sklearn.model_selection import GridSearchCV
+from sklearn.metrics import roc_auc_score
+import numpy as np
+
+input_path="A"  # Replace “A” with your file path
+data = pd.read_csv(inuput_path,index_col=0)
+print(f"The first five rows of data：{data.iloc[0:10,:]}")
+print(f"Number of missing values per column：{data.isna().sum()}")
+print(f"Percentage of missing values in each column：{data.isna().mean()}")
+
+data = data.dropna()
+X,y=data.iloc[:,1:],data.iloc[:,0]
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=0, stratify=y)
+print(f"The first 10 rows of data from the feature training set：{X_train.head(10)}")
+print(f"The first 10 rows of data from the feature training set：{y_train.head(10)}")
+# Create a LogisticRegression model
+t0 = datetime.now()
+model = LogisticRegression(max_iter=1000,random_state=0)
+grid_params = {
+    "C":[0.01, 0.05, 0.1,1,3,5,10,20,50,100],
+    "penalty":['l1', 'l2'],
+    "solver":['liblinear'],
+    "class_weight":[None,"balanced"]
+}
+grid_search = GridSearchCV(
+    estimator=model,
+    param_grid=grid_params,
+    scoring='roc_auc',  
+    cv=5,
+    n_jobs=-1,
+    verbose=1,
+)
+grid_search.fit(X_train, y_train)
+best_model = grid_search.best_estimator_
+t_train_model = datetime.now()-t0
+print(f"Time required for grid search and model training：{t_train_model.total_seconds()}秒")
+print(f"Optimal combination of parameters：{grid_search.best_params_}")
+# Model Performance Evaluation
+print(f"The model's accuracy on the training set：{best_model.score(X_train, y_train)}")
+train_auc = roc_auc_score(y_train, best_model.predict_proba(X_train)[:, 1])
+print(f"The model's AUC score on the training set：{train_auc}")
+print(f"The model's accuracy on the test set：{best_model.score(X_test, y_test)}")
+test_auc = roc_auc_score(y_test, best_model.predict_proba(X_test)[:, 1])
+print(f"The model's AUC score on the testing set：{test_auc}")
+print(f"Probability of prediction on the test set：{best_model.predict_proba(X_test)}")
+# Import the data to be predicted
+new_data = pd.read_csv(r"D:\HuaweiMoveData\Users\HUAWEI\Desktop\cs-test.csv")
+print(f"The shape of the raw data：{new_data.shape}")
+new_data = new_data.dropna()
+print(f"The shape of the data after removing missing values：{new_data.shape}")
+model_pred = best_model.predict(new_data)
+proba = best_model.predict_proba(new_data)
+
+new_data["predicted"] = model_pred
+new_data["proba_0"] = proba[:,0]
+new_data["proba_1"] = proba[:,1]
+feature_coef = np.append(best_model.coef_[0], best_model.intercept_[0])
+feature_name = X.columns
+all_names = ["Intercept"] + feature_name.tolist()
+all_names = np.array(all_names)
+feature_coef = pd.DataFrame(
+    {"feature_name":all_names, "coef_values":feature_coef}
+)
+feature_coef = feature_coef.sort_values(by="coef_values", ascending=False)
+print(f"Coefficients of the model's various features:{feature_coef}")
+feature_coef.to_csv(r"B")   #replace "B" with your file path
+print(f"The features of the optimal model have been saved")
+new_data.to_csv(r"C")   #replace "C" with your file path
+print(f"The prediction results and prediction probabilities have been saved")
