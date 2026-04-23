@@ -1,0 +1,60 @@
+import pandas as pd
+from sklearn.model_selection import train_test_split
+from sklearn.linear_model import LogisticRegression
+from sklearn.ensemble import RandomForestClassifier
+from datetime import datetime
+from xgboost import XGBClassifier
+from skopt import BayesSearchCV
+from skopt.space import Real, Categorical, Integer
+
+input_path="A"  # Replace “A” with your file path
+data = pd.read_csv(inuput_path,index_col=0)
+print(f"The first five rows of data：{data.iloc[0:10,:]}")
+print(f"Number of missing values per column：{data.isna().sum()}")
+print(f"Percentage of missing values in each column：{data.isna().mean()}")
+
+data = data.dropna()
+X,y=data.iloc[:,1:],data.iloc[:,0]
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=0, stratify=y)
+print(f"The first 10 rows of data from the feature training set：{X_train.head(10)}")
+print(f"The first 10 rows of data from the feature training set：{y_train.head(10)}")
+
+model1 = LogisticRegression()
+# Create a Random Forest model
+t0 = datetime.now()
+model2 = RandomForestClassifier(random_state=0)
+search_spaces = {
+    "n_estimators":Integer(300,600),
+    "max_depth":Integer(3, 10),    
+    "max_samples":Real(0.6,1),
+    "max_features": Categorical(['log2','sqrt']),
+    "min_samples_split":Integer(2,30),   
+    "min_samples_leaf":Integer(5,30),     
+    "bootstrap":Categorical([True]),
+}
+opt = BayesSearchCV(
+    estimator=model2,
+    search_spaces=search_spaces,
+    scoring='roc_auc',  
+    n_iter=30,
+    cv=3,
+    n_jobs=-1,
+    verbose=1,
+    random_state=0,
+)
+opt.fit(X_train, y_train)
+best_model = opt.best_estimator_
+t_train_model2 = datetime.now()-t0
+print(f"Time required for Bayesian optimization parameter tuning and model training：{t_train_model2.total_seconds()}seconds")
+print(f"Optimal combination of parameters：{opt.best_params_}")
+# Model Performance Evaluation
+print(f"The model's accuracy on the training set：{best_model.score(X_train, y_train)}")
+print(f"The model's accuracy on the testing set：{best_model.score(X_test, y_test)}")
+print(f"Probability of test set prediction results：{best_model.predict_proba(X_test)}")
+# Import new data to be predicted
+output_path = "B"   # Replace “B” with your file path
+new_data = pd.read_csv(output_path)
+model2_pred = best_model.predict(new_data)
+new_data["predicted"] = model2_pred
+new_data.to_csv(r"C")   # Replace “C” with your file path
+print(f"The forecast results have been saved")
